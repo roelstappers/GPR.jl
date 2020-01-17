@@ -8,8 +8,8 @@ using Netatmo
 using LinearAlgebra
 using IterativeSolvers
 
-dtg = Dates.DateTime(2018,05,10,16)
-period = Dates.Day(10)
+dtg = Dates.DateTime(2018,05,10,10)
+period = Dates.Day(2)
 timerange = dtg:Hour(1):dtg+period
 
 latrange  = 59.9:0.01:60  
@@ -25,19 +25,22 @@ df[!,:pressurehat] .= 0.0
 
 groupedbyid = groupby(df,:id)
 
-sigmat  = 3*60*60   # time correlation length scale 6 hours
-sigmao  = 0.2    # hPa
+sigmat  = 0.5*60*60   # time correlation length scale 
+sigmao  = 0.1    # hPa
 
 rbf(utc1,utc2) = exp(-(utc1-utc2)^2/(2*sigmat^2))
 
 # estimator(pressure) = 
 
-
-for station in groupedbyid[1:2]
+p=plot(legend=false)
+for station in groupedbyid
    K = [rbf(r1[:time_utc],r2[:time_utc]) for r1 in eachrow(station), r2 in eachrow(station)] 
    KpI = copy(K) 
    KpI[diagind(KpI)] .= 1 + sigmao^2
    meanpres = mean(station[!,:pressure])
+
+   meanpres > 1050 && continue   # the values make the plot unreadable 
+   meanpres < 1000 && continue 
    pressureanom = station[!,:pressure] .- meanpres
    q, minreslog = minres(KpI,pressureanom,log=true)
    
@@ -47,9 +50,18 @@ for station in groupedbyid[1:2]
    end 
    absdiff = abs.(station[!,:pressurehat]-station[!,:pressure])
    println("$(maximum(absdiff)) $(station[1,:id]) $minreslog")
-   if any(absdiff .> 3*sigmao)
+   ind = absdiff .> 3*sigmao
+
+
+   if any(ind)
       println("stationerror")
+      plot!(p,unix2datetime.(station[!,:time_utc]),station[!,:pressurehat])
+      scatter!(p,unix2datetime.(station[!,:time_utc]),station[!,:pressure],markersize=0.3,color=:blue)
+      scatter!(p,unix2datetime.(station[ind,:time_utc]),station[ind,:pressure],markersize=1,color=:red)
+      
    end 
 end 
+gui()
+
 scatter(unix2datetime.(groupedbyid[1][!,:time_utc]),groupedbyid[1][!,:pressure],markersize=0.3)
 plot!(unix2datetime.(groupedbyid[1][!,:time_utc]),groupedbyid[1][!,:pressurehat])
